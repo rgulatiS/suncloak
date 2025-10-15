@@ -47,23 +47,54 @@ Widget buildAlarmListTile({
     );
   });
 
-  return ListTile(
-    leading: alarmIcon,
-    title: Row(
-      children: [
-        Text(alarm.label),
-        SizedBox(width: 8),
-        Text(
-          "$upcomingDayText, $timeText",
-          style: TextStyle(color: Colors.grey[600]),
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 6.0),
+    child: Card(
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => onEdit(context, alarm),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  alarmIcon,
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          alarm.label.isNotEmpty ? alarm.label : "Alarm",
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          "$upcomingDayText, $timeText",
+                          style: TextStyle(color: Colors.grey[600]),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Switch(
+                    value: alarm.isActive,
+                    onChanged: (_) => viewModel.toggleAlarm(alarm.id),
+                  ),
+                ],
+              ),
+              if (alarm.repeatDays.isNotEmpty) ...[
+                SizedBox(height: 10),
+                Row(children: repeatDayBoxes),
+              ]
+            ],
+          ),
         ),
-      ],
+      ),
     ),
-    subtitle: Row(children: repeatDayBoxes),
-    trailing: Switch(
-      value: alarm.isActive,
-      onChanged: (_) => viewModel.toggleAlarm(alarm.id),
-    ),
-    onTap: () => onEdit(context, alarm),
   );
+
 }

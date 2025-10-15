@@ -51,4 +51,14 @@ class AlarmModel {
       isBefore: isBefore ?? this.isBefore,
     );
   }
+  AlarmModel toAlarmModel({required String id}) {
+    return AlarmModel(
+      id: id,
+      time: time,
+      label: label,
+      type: type,
+      repeatDays: repeatDays,
+      musicAppLink: null,
+    );
+  }
 }

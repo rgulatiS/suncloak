@@ -40,16 +40,21 @@ class AlarmViewModel extends ChangeNotifier {
     }
   }
 
-  void updateAlarmFull(String id, DateTime newTime, String newLabel, AlarmType newType) {
+  void updateAlarmFull(String id, DateTime newTime, String newLabel,
+      AlarmType newType,
+      { Set<int>? repeatDays,}) {
     final index = _alarms.indexWhere((alarm) => alarm.id == id);
     if (index != -1) {
-      _alarms[index].time = newTime;
-      _alarms[index].label = newLabel;
-      _alarms[index].type = newType;
+      final updatedAlarm = _alarms[index].copyWith(
+        time: newTime,
+        label: newLabel,
+        type: newType,
+        repeatDays: repeatDays ?? _alarms[index].repeatDays,
+      );
+      _alarms[index] = updatedAlarm;
       notifyListeners();
     }
   }
-
 
   Future<void> addSunriseSunsetAlarm({
     required AlarmType type,
@@ -74,7 +79,6 @@ class AlarmViewModel extends ChangeNotifier {
       print('Failed to create sunrise/sunset alarm: location not available');
     }
   }
-
 
 
 }

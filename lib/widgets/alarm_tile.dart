@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../models/alarm_model.dart';
 import '../viewmodels/alarm_viewmodel.dart';
 import '../helper/upcoming_day.dart';
@@ -10,9 +11,9 @@ Widget buildAlarmListTile({
   required void Function(BuildContext, AlarmModel) onEdit,
 }) {
   final upcomingDayText = getUpcomingDayText(alarm.time);
-  final timeText =
-      "${alarm.time.hour.toString().padLeft(2, '0')}:${alarm.time.minute.toString().padLeft(2, '0')}";
-
+  // final timeText =
+  //     "${alarm.time.hour.toString().padLeft(2, '0')}:${alarm.time.minute.toString().padLeft(2, '0')}";
+  final timeText = DateFormat('HH:mm').format(alarm.time);
   Icon alarmIcon;
   switch (alarm.type) {
     case AlarmType.sunrise:

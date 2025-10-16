@@ -102,6 +102,12 @@ class AlarmScreen extends StatelessWidget {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => Center(child: CircularProgressIndicator()),
+          );
+          try {
           // Show a dialog to select alarm type
           final selectedType = await showDialog<AlarmType>(
             context: context,
@@ -223,6 +229,10 @@ class AlarmScreen extends StatelessWidget {
                 SnackBar(content: Text('Failed to get location for alarm')),
               );
             }
+          }
+          } finally {
+            // Remove loading dialog
+            Navigator.of(context).pop();
           }
         },
         child: Icon(Icons.add),

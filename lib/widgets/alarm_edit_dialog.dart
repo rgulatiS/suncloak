@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
+import 'package:intl/intl.dart';
 import '../models/alarm_model.dart';
 
 final _uuid = Uuid();
@@ -43,7 +44,14 @@ Future<AlarmModel?> showAlarmEditDialog(BuildContext context, AlarmModel alarm) 
     final pickedTime = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(selectedDateTime),
+      builder: (context, child) {
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+          child: child!,
+        );
+      },
     );
+
     if (pickedTime != null) {
       selectedDateTime = DateTime(
         selectedDateTime.year,
@@ -62,86 +70,80 @@ Future<AlarmModel?> showAlarmEditDialog(BuildContext context, AlarmModel alarm) 
     builder: (context) {
       return StatefulBuilder(
         builder: (context, setState) {
+          final isSunEvent = alarm.type == AlarmType.sunrise || alarm.type == AlarmType.sunset;
+          final timeFormatter = DateFormat('yyyy-MM-dd HH:mm'); // 24-hour format
           return AlertDialog(
             title: Text('Edit Alarm'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Label
-                  TextField(
-                    controller: labelController,
-                    decoration: InputDecoration(labelText: 'Label'),
-                  ),
-                  SizedBox(height: 10),
+            content: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.6,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Label
+                    TextField(
+                      controller: labelController,
+                      decoration: InputDecoration(labelText: 'Label'),
+                    ),
+                    SizedBox(height: 10),
 
-                  // Type dropdown
-                  // DropdownButton<AlarmType>(
-                  //   isExpanded: true,
-                  //   value: selectedType,
-                  //   onChanged: (value) {
-                  //     if (value != null) {
-                  //       setState(() {
-                  //         selectedType = value;
-                  //       });
-                  //     }
-                  //   },
-                  //   items: AlarmType.values.map((type) {
-                  //     return DropdownMenuItem(
-                  //       value: type,
-                  //       child: Text(type.name),
-                  //     );
-                  //   }).toList(),
-                  // ),
+                    // Date picker (always shown)
+                    ElevatedButton(
+                      onPressed: () async {
+                        if (await pickDate()) setState(() {});
+                      },
+                      child: Text('Date'),
+                    ),
 
-                  SizedBox(height: 10),
-
-                  // Date and Time pickers
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      ElevatedButton(
-                        onPressed: () async {
-                          if (await pickDate()) setState(() {});
-                        },
-                        child: Text('Pick Date'),
-                      ),
+                    // Time picker — only if NOT sunrise/sunset
+                    if (!isSunEvent)
                       ElevatedButton(
                         onPressed: () async {
                           if (await pickTime()) setState(() {});
                         },
-                        child: Text('Pick Time'),
+                        child: Text('Time'),
                       ),
-                    ],
-                  ),
 
-                  SizedBox(height: 8),
+                    SizedBox(height: 8),
+                    Text(
+                      "Selected: ${timeFormatter.format(selectedDateTime.toLocal())}",
+                      style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                    ),
 
-                  Text(
-                    "Selected: ${selectedDateTime.toLocal().toString().substring(0, 16)}",
-                    style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-                  ),
+                    SizedBox(height: 10),
 
-                  SizedBox(height: 10),
+                    // Repeat Days
+                    Text('Repeat Days'),
+                    Wrap(
+                      spacing: 4,
+                      children: List.generate(7, (index) {
+                        final dayLabel = ['M', 'T', 'W', 'T', 'F', 'S', 'S'][index];
+                        final isSelected = selectedRepeatDays[index];
 
-                  // Repeat Days
-                  Text('Repeat Days'),
-                  Wrap(
-                    spacing: 4,
-                    children: List.generate(7, (index) {
-                      final dayLabel = ['M', 'T', 'W', 'T', 'F', 'S', 'S'][index];
-                      return FilterChip(
-                        label: Text(dayLabel),
-                        selected: selectedRepeatDays[index],
-                        onSelected: (selected) {
-                          setState(() {
-                            selectedRepeatDays[index] = selected;
-                          });
-                        },
-                      );
-                    }),
-                  ),
-                ],
+                        return FilterChip(
+                          label: Text(
+                            dayLabel,
+                            style: TextStyle(
+                              color: isSelected ? Colors.white : Colors.black87,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          selected: isSelected,
+                          showCheckmark: false,
+                          selectedColor: Colors.green,
+                          backgroundColor: Colors.grey.shade300,
+                          onSelected: (selected) {
+                            setState(() {
+                              selectedRepeatDays[index] = selected;
+                            });
+                          },
+                        );
+                      }),
+                    ),
+                  ],
+                ),
               ),
             ),
             actions: [
@@ -152,10 +154,7 @@ Future<AlarmModel?> showAlarmEditDialog(BuildContext context, AlarmModel alarm) 
               TextButton(
                 onPressed: () {
                   final newLabel = labelController.text.trim();
-                  if (newLabel.isEmpty) {
-                    // Optional: show error or prevent close
-                    return;
-                  }
+                  if (newLabel.isEmpty) return;
 
                   final repeatDaysSet = <int>{};
                   for (int i = 0; i < selectedRepeatDays.length; i++) {
@@ -164,11 +163,9 @@ Future<AlarmModel?> showAlarmEditDialog(BuildContext context, AlarmModel alarm) 
                     }
                   }
 
-                  // Return an AlarmModel with updated info, keep existing alarm id
                   Navigator.of(context).pop(
                     alarm.copyWith(
                       label: newLabel,
-                      type: selectedType,
                       time: selectedDateTime,
                       repeatDays: repeatDaysSet,
                     ),

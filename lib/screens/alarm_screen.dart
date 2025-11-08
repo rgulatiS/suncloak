@@ -6,10 +6,43 @@ import '../viewmodels/alarm_viewmodel.dart';
 import '../helper/alarm_creation_helper.dart';
 import '../widgets/alarm_tile.dart';
 import '../widgets/alarm_edit_dialog.dart';
+import 'package:geolocator/geolocator.dart';
+import '../services/alarm_service.dart';
 
+class AlarmScreen extends StatefulWidget {
+  @override
+  State<AlarmScreen> createState() => _AlarmScreenState();
+}
 
-class AlarmScreen extends StatelessWidget {
+class _AlarmScreenState extends State<AlarmScreen> {
   final uuid = Uuid();
+  double? userLat;
+  double? userLng;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUserLocation();
+  }
+
+  Future<void> _fetchUserLocation() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return;
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever) {
+      permission = await Geolocator.requestPermission();
+      if (permission != LocationPermission.whileInUse &&
+          permission != LocationPermission.always) return;
+    }
+
+    final position = await Geolocator.getCurrentPosition();
+    setState(() {
+      userLat = position.latitude;
+      userLng = position.longitude;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +51,6 @@ class AlarmScreen extends StatelessWidget {
 
     Future<void> _editAlarm(BuildContext context, AlarmModel alarm) async {
       final viewModel = Provider.of<AlarmViewModel>(context, listen: false);
-
       final result = await showAlarmEditDialog(context, alarm);
 
       if (result != null) {
@@ -29,12 +61,18 @@ class AlarmScreen extends StatelessWidget {
           result.type,
           repeatDays: result.repeatDays,
         );
+        if (alarm.isActive && userLat != null && userLng != null) {
+          await AlarmService.scheduleNextAlarm(
+            alarm,
+            lat: userLat!,
+            lng: userLng!,
+          );
+        }
       }
     }
 
     Future<void> createRegularAlarm(BuildContext context,
         AlarmViewModel viewModel) async {
-      // Create a new AlarmModel with default values and unique ID
       final now = DateTime.now().add(Duration(minutes: 1));
       final newAlarm = AlarmModel(
         id: uuid.v4(),
@@ -43,28 +81,35 @@ class AlarmScreen extends StatelessWidget {
         label: "",
       );
 
-      // Show the edit dialog with this new alarm passed in
       final result = await showAlarmEditDialog(context, newAlarm);
 
       if (result != null) {
-        // Convert AlarmEditResult back to AlarmModel with same ID
         final alarmToAdd = AlarmModel(
           id: newAlarm.id,
           time: result.time,
           type: result.type,
           label: result.label,
           repeatDays: result.repeatDays,
-          isActive: true, // or whatever default you want
+          isActive: true,
         );
 
-        // Add to ViewModel
         viewModel.addAlarm(alarmToAdd);
+
+        if (userLat != null && userLng != null) {
+          await AlarmService.scheduleNextAlarm(
+            alarmToAdd,
+            lat: userLat!,
+            lng: userLng!,
+          );
+        }
       }
     }
 
     return Scaffold(
       appBar: AppBar(title: Text('SunCloak Alarms')),
-      body: ListView.builder(
+      body: userLat == null || userLng == null
+          ? Center(child: CircularProgressIndicator())
+          : ListView.builder(
         itemCount: alarms.length,
         itemBuilder: (_, index) {
           final alarm = alarms[index];
@@ -74,28 +119,33 @@ class AlarmScreen extends StatelessWidget {
             confirmDismiss: (direction) async {
               return await showDialog(
                 context: context,
-                builder: (_) =>
-                    AlertDialog(
-                      title: Text('Delete Alarm?'),
-                      content: Text(
-                          'Are you sure you want to delete this alarm?'),
-                      actions: [
-                        TextButton(onPressed: () =>
+                builder: (_) => AlertDialog(
+                  title: Text('Delete Alarm?'),
+                  content:
+                  Text('Are you sure you want to delete this alarm?'),
+                  actions: [
+                    TextButton(
+                        onPressed: () =>
                             Navigator.of(context).pop(false),
-                            child: Text('Cancel')),
-                        TextButton(onPressed: () =>
-                            Navigator.of(context).pop(true),
-                            child: Text('Delete')),
-                      ],
-                    ),
+                        child: Text('Cancel')),
+                    TextButton(
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: Text('Delete')),
+                  ],
+                ),
               );
             },
-            onDismissed: (_) => viewModel.deleteAlarm(alarm.id),
+            onDismissed: (_) async {
+              await AlarmService.cancelAlarm(alarm);
+              viewModel.deleteAlarm(alarm.id);
+            },
             child: buildAlarmListTile(
               context: context,
               alarm: alarm,
               viewModel: viewModel,
               onEdit: _editAlarm,
+              userLat: userLat!,
+              userLng: userLng!,
             ),
           );
         },
@@ -108,131 +158,128 @@ class AlarmScreen extends StatelessWidget {
             builder: (_) => Center(child: CircularProgressIndicator()),
           );
           try {
-          // Show a dialog to select alarm type
-          final selectedType = await showDialog<AlarmType>(
-            context: context,
-            builder: (context) =>
-                SimpleDialog(
-                  title: Text('Select Alarm Type'),
-                  children: [
-                    SimpleDialogOption(
-                      child: Text('Regular'),
-                      onPressed: () =>
-                          Navigator.pop(context, AlarmType.regular),
-                    ),
-                    SimpleDialogOption(
-                      child: Text('Sunrise'),
-                      onPressed: () =>
-                          Navigator.pop(context, AlarmType.sunrise),
-                    ),
-                    SimpleDialogOption(
-                      child: Text('Sunset'),
-                      onPressed: () => Navigator.pop(context, AlarmType.sunset),
-                    ),
-                  ],
-                ),
-          );
-
-          if (selectedType == null) return; // User cancelled
-
-          if (selectedType == AlarmType.regular) {
-            await createRegularAlarm(context, viewModel);
-          } else {
-            // For sunrise or sunset, ask user before/after and offset minutes via dialog
-
-            final result = await showDialog<Map<String, dynamic>>(
+            final selectedType = await showDialog<AlarmType>(
               context: context,
-              builder: (context) {
-                bool isBefore = true;
-                final offsetController = TextEditingController(
-                    text: '10'); // default offset
+              builder: (context) => SimpleDialog(
+                title: Text('Select Alarm Type'),
+                children: [
+                  SimpleDialogOption(
+                    child: Text('Regular'),
+                    onPressed: () => Navigator.pop(context, AlarmType.regular),
+                  ),
+                  SimpleDialogOption(
+                    child: Text('Sunrise'),
+                    onPressed: () => Navigator.pop(context, AlarmType.sunrise),
+                  ),
+                  SimpleDialogOption(
+                    child: Text('Sunset'),
+                    onPressed: () => Navigator.pop(context, AlarmType.sunset),
+                  ),
+                ],
+              ),
+            );
 
-                return StatefulBuilder(
-                  builder: (context, setState) {
-                    return AlertDialog(
-                      title: Text('${selectedType == AlarmType.sunrise
-                          ? "Sunrise"
-                          : "Sunset"} Alarm Settings'),
-                      content: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Row(
-                            children: [
-                              Text('Before'),
-                              Radio<bool>(
-                                value: true,
-                                groupValue: isBefore,
-                                onChanged: (val) {
-                                  setState(() {
-                                    isBefore = val!;
-                                  });
-                                },
-                              ),
-                              Text('After'),
-                              Radio<bool>(
-                                value: false,
-                                groupValue: isBefore,
-                                onChanged: (val) {
-                                  setState(() {
-                                    isBefore = val!;
-                                  });
-                                },
-                              ),
-                            ],
+            if (selectedType == null) return;
+
+            if (selectedType == AlarmType.regular) {
+              await createRegularAlarm(context, viewModel);
+            } else {
+              final result = await showDialog<Map<String, dynamic>>(
+                context: context,
+                builder: (context) {
+                  bool isBefore = true;
+                  final offsetController = TextEditingController(text: '10');
+
+                  return StatefulBuilder(
+                    builder: (context, setState) {
+                      return AlertDialog(
+                        title: Text(
+                            '${selectedType == AlarmType.sunrise ? "Sunrise" : "Sunset"} Alarm Settings'),
+                        content: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              children: [
+                                Text('Before'),
+                                Radio<bool>(
+                                  value: true,
+                                  groupValue: isBefore,
+                                  onChanged: (val) {
+                                    setState(() {
+                                      isBefore = val!;
+                                    });
+                                  },
+                                ),
+                                Text('After'),
+                                Radio<bool>(
+                                  value: false,
+                                  groupValue: isBefore,
+                                  onChanged: (val) {
+                                    setState(() {
+                                      isBefore = val!;
+                                    });
+                                  },
+                                ),
+                              ],
+                            ),
+                            TextField(
+                              controller: offsetController,
+                              keyboardType: TextInputType.number,
+                              decoration:
+                              InputDecoration(labelText: 'Offset in minutes'),
+                            ),
+                          ],
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, null),
+                            child: Text('Cancel'),
                           ),
-                          TextField(
-                            controller: offsetController,
-                            keyboardType: TextInputType.number,
-                            decoration: InputDecoration(
-                                labelText: 'Offset in minutes'),
+                          TextButton(
+                            onPressed: () {
+                              Navigator.pop(context, {
+                                'isBefore': isBefore,
+                                'offset': int.tryParse(offsetController.text) ?? 0,
+                              });
+                            },
+                            child: Text('OK'),
                           ),
                         ],
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, null),
-                          child: Text('Cancel'),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            Navigator.pop(context, {
-                              'isBefore': isBefore,
-                              'offset': int.tryParse(offsetController.text) ??
-                                  0,
-                            });
-                          },
-                          child: Text('OK'),
-                        ),
-                      ],
-                    );
-                  },
-                );
-              },
-            );
-
-            if (result == null) return; // Cancelled
-
-            final isBefore = result['isBefore'] as bool;
-            final offset = result['offset'] as int;
-
-            // Create sunrise/sunset alarm with your helper
-            final alarm = await AlarmCreationHelper.createSunriseSunsetAlarm(
-              type: selectedType,
-              isBefore: isBefore,
-              beforeAfterMinutes: offset,
-            );
-
-            if (alarm != null) {
-              viewModel.addAlarm(alarm);
-            } else {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Failed to get location for alarm')),
+                      );
+                    },
+                  );
+                },
               );
+
+              if (result == null) return;
+
+              final isBefore = result['isBefore'] as bool;
+              final offset = result['offset'] as int;
+
+              final alarm = await AlarmCreationHelper.createSunriseSunsetAlarm(
+                type: selectedType,
+                isBefore: isBefore,
+                beforeAfterMinutes: offset,
+              );
+
+              if (alarm != null) {
+                viewModel.addAlarm(alarm);
+
+                if (userLat != null && userLng != null) {
+                  await AlarmService.scheduleNextAlarm(
+                    alarm,
+                    lat: userLat!,
+                    lng: userLng!,
+                  );
+                }
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Failed to get location for alarm')),
+                );
+              }
             }
-          }
           } finally {
-            // Remove loading dialog
-            Navigator.of(context).pop();
+            Navigator.of(context).pop(); // remove loading
           }
         },
         child: Icon(Icons.add),

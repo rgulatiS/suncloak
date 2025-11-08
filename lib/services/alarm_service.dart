@@ -1,77 +1,98 @@
 // lib/services/alarm_service.dart
 
+import 'dart:developer';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
-import 'package:timezone/data/latest_all.dart' as tz;
 import '../models/alarm_model.dart';
+import '../utils/sun_time_util.dart';
+import 'alarm_notification_helper.dart';
 
 class AlarmService {
-  static final FlutterLocalNotificationsPlugin _notificationsPlugin =
-  FlutterLocalNotificationsPlugin();
+  static final _flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
-  static bool _initialized = false;
-
-  /// Initialize notifications (call this in main.dart before runApp)
   static Future<void> init() async {
-    if (_initialized) return;
-
-    tz.initializeTimeZones();
-
-    const AndroidInitializationSettings androidInit =
-    AndroidInitializationSettings('app_icon'); // Make sure you have an app_icon.png in res/drawable
-    const DarwinInitializationSettings iosInit = DarwinInitializationSettings(
-      requestSoundPermission: true,
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-    );
-
-    const InitializationSettings settings =
-    InitializationSettings(android: androidInit, iOS: iosInit);
-
-    await _notificationsPlugin.initialize(settings);
-    _initialized = true;
+    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const iosInit = DarwinInitializationSettings();
+    const initSettings = InitializationSettings(android: androidInit, iOS: iosInit);
+    await _flutterLocalNotificationsPlugin.initialize(initSettings);
   }
 
-  /// Schedule an alarm at a specific time
-  static Future<void> scheduleAlarm(AlarmModel alarm) async {
-    await init();
+  /// Compatibility alias for older code in ViewModel
+  static Future<void> scheduleAlarm(AlarmModel alarm,
+      {double lat = 0.0, double lng = 0.0}) async {
+    await scheduleNextAlarm(alarm, lat: lat, lng: lng);
+  }
 
-    final alarmTime = tz.TZDateTime.from(alarm.time, tz.local);
+  /// Schedule next alarm (supports sun and regular)
+  static Future<void> scheduleNextAlarm(
+      AlarmModel alarm, {
+        required double lat,
+        required double lng,
+      }) async {
+    final nextTime = getNextTriggerTime(alarm, lat, lng);
 
-    final androidDetails = AndroidNotificationDetails(
-      'alarm_channel',
-      'Alarms',
-      channelDescription: 'Channel for alarm notifications',
-      importance: Importance.max,
-      priority: Priority.high,
-      playSound: true,
-      enableVibration: true,
-      sound: RawResourceAndroidNotificationSound('alarm_sound'), // Add alarm_sound.mp3 in android/res/raw
-      fullScreenIntent: true, // Full-screen notification
-    );
+    if (nextTime.isBefore(DateTime.now())) {
+      log('Skipping past alarm: ${nextTime.toIso8601String()}');
+      return;
+    }
 
-    const iosDetails = DarwinNotificationDetails(
-      presentAlert: true,
-      presentSound: true,
-      presentBadge: true,
-    );
+    final notificationDetails = AlarmNotificationHelper.getNotificationDetails(alarm);
 
-    await _notificationsPlugin.zonedSchedule(
-      alarm.hashCode, // unique id per alarm
+    await _flutterLocalNotificationsPlugin.zonedSchedule(
+      alarm.id.hashCode,
       alarm.label.isNotEmpty ? alarm.label : 'Alarm',
-      'Alarm time!',
-      alarmTime,
-      NotificationDetails(android: androidDetails, iOS: iosDetails),
-      androidAllowWhileIdle: true,
+      'Time: ${nextTime.hour.toString().padLeft(2, '0')}:${nextTime.minute.toString().padLeft(2, '0')}',
+      tz.TZDateTime.from(nextTime, tz.local),
+      notificationDetails,
+      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
       UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time, // Repeat daily optional
     );
+
+    log('Scheduled alarm: ${alarm.label} at $nextTime');
   }
 
-  /// Cancel a scheduled alarm
   static Future<void> cancelAlarm(AlarmModel alarm) async {
-    await init();
-    await _notificationsPlugin.cancel(alarm.hashCode);
+    await _flutterLocalNotificationsPlugin.cancel(alarm.id.hashCode);
+    log('Cancelled alarm: ${alarm.label}');
+  }
+
+  /// Compute next trigger time for sunrise/sunset or regular alarms
+  static DateTime getNextTriggerTime(AlarmModel alarm, double lat, double lng) {
+    final now = DateTime.now();
+    DateTime candidateDate = now;
+
+    // Skip non-repeat days if repeatDays is set
+    while (alarm.repeatDays.isNotEmpty &&
+        !alarm.repeatDays.contains(candidateDate.weekday)) {
+      candidateDate = candidateDate.add(const Duration(days: 1));
+    }
+
+    DateTime alarmTime;
+
+    if (alarm.type == AlarmType.sunrise || alarm.type == AlarmType.sunset) {
+      final sunTime = alarm.type == AlarmType.sunrise
+          ? SunTimeUtil.calculateSunrise(candidateDate, lat, lng)
+          : SunTimeUtil.calculateSunset(candidateDate, lat, lng);
+
+      alarmTime = alarm.isBefore == true
+          ? sunTime.subtract(Duration(minutes: alarm.beforeAfterMinutes ?? 0))
+          : sunTime.add(Duration(minutes: alarm.beforeAfterMinutes ?? 0));
+    } else {
+      alarmTime = DateTime(
+        candidateDate.year,
+        candidateDate.month,
+        candidateDate.day,
+        alarm.time.hour,
+        alarm.time.minute,
+      );
+    }
+
+    if (!alarmTime.isAfter(now)) {
+      candidateDate = candidateDate.add(const Duration(days: 1));
+      return getNextTriggerTime(alarm, lat, lng);
+    }
+
+    return alarmTime;
   }
 }

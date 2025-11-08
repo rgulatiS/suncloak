@@ -5,8 +5,15 @@ import 'package:provider/provider.dart';
 
 import 'screens/alarm_screen.dart';
 import 'viewmodels/alarm_viewmodel.dart';
+import 'services/alarm_service.dart';
 
-void main() {
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize local notifications
+  await AlarmService.init();
+
   runApp(
     MultiProvider(
       providers: [

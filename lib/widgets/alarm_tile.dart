@@ -1,19 +1,25 @@
+// lib/widgets/alarm_tile.dart
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/alarm_model.dart';
 import '../viewmodels/alarm_viewmodel.dart';
 import '../helper/upcoming_day.dart';
+import '../utils/sun_time_util.dart';
+import '../services/alarm_service.dart';
 
 Widget buildAlarmListTile({
   required BuildContext context,
   required AlarmModel alarm,
   required AlarmViewModel viewModel,
   required void Function(BuildContext, AlarmModel) onEdit,
+  required double userLat,
+  required double userLng,
 }) {
-  final upcomingDayText = getUpcomingDayText(alarm.time);
-  // final timeText =
-  //     "${alarm.time.hour.toString().padLeft(2, '0')}:${alarm.time.minute.toString().padLeft(2, '0')}";
-  final timeText = DateFormat('HH:mm').format(alarm.time);
+  final nextTriggerTime = AlarmService.getNextTriggerTime(alarm, userLat, userLng);
+  final upcomingDayText = getUpcomingDayText(nextTriggerTime);
+  final timeText = DateFormat('HH:mm').format(nextTriggerTime);
+
   Icon alarmIcon;
   switch (alarm.type) {
     case AlarmType.sunrise:
@@ -29,7 +35,7 @@ Widget buildAlarmListTile({
 
   final weekDays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
   List<Widget> repeatDayBoxes = List.generate(7, (index) {
-    final dayIndex = index + 1; // Monday=1 ... Sunday=7
+    final dayIndex = index + 1;
     final isSelected = alarm.repeatDays.contains(dayIndex);
     return Container(
       margin: EdgeInsets.symmetric(horizontal: 2),
@@ -97,5 +103,4 @@ Widget buildAlarmListTile({
       ),
     ),
   );
-
 }

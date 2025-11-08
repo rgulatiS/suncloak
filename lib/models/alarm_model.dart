@@ -12,6 +12,7 @@ class AlarmModel {
   Set<int> repeatDays; // 0=Sunday, 1=Monday, ...
 
   // For sunrise/sunset alarms:
+  int? offsetMinutes;
   int? beforeAfterMinutes;
   bool? isBefore;
 
@@ -24,6 +25,7 @@ class AlarmModel {
     this.isActive = true,
     this.musicAppLink,
     this.repeatDays = const {},
+    this.offsetMinutes,
     this.beforeAfterMinutes,
     this.isBefore,
   });
@@ -36,6 +38,7 @@ class AlarmModel {
     bool? isActive,
     String? musicAppLink,
     Set<int>? repeatDays,
+    int? offsetMinutes,
     int? beforeAfterMinutes,
     bool? isBefore,
   }) {
@@ -47,18 +50,9 @@ class AlarmModel {
       isActive: isActive ?? this.isActive,
       musicAppLink: musicAppLink ?? this.musicAppLink,
       repeatDays: repeatDays ?? this.repeatDays,
+      offsetMinutes: offsetMinutes ?? this.offsetMinutes,
       beforeAfterMinutes: beforeAfterMinutes ?? this.beforeAfterMinutes,
       isBefore: isBefore ?? this.isBefore,
-    );
-  }
-  AlarmModel toAlarmModel({required String id}) {
-    return AlarmModel(
-      id: id,
-      time: time,
-      label: label,
-      type: type,
-      repeatDays: repeatDays,
-      musicAppLink: null,
     );
   }
 }

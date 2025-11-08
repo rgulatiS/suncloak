@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 import '../models/alarm_model.dart';
 import 'location.dart';
+import 'geocoding_helper.dart';
 import '../utils/sun_time_util.dart';
 import 'sun_cache.dart';
 
@@ -74,13 +75,18 @@ class AlarmCreationHelper {
             ? sunTime.subtract(Duration(minutes: beforeAfterMinutes))
             : sunTime.add(Duration(minutes: beforeAfterMinutes));
       }
+      String? city = await getCityFromPosition(position.latitude, position.longitude);
 
       // 6️⃣ Build and return the alarm
       return AlarmModel(
         id: const Uuid().v4(),
         time: sunTime,
         type: type,
-        label: type == AlarmType.sunrise ? "Sunrise" : "Sunset",
+        label: "${type == AlarmType.sunrise ? "Sunrise" : "Sunset"}"
+            "${isBefore ? " - Before" : " - After"} "
+            "$beforeAfterMinutes"
+            "min"
+            "${city != null ? " @$city" : ""}",
         musicAppLink: null,
         isActive: true,
         repeatDays: const {},
